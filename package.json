@@ -1,0 +1,50 @@
+{
+  "name": "aurum-reservation-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0 --port 3000",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0 --port 3000",
+    "lint": "eslint .",
+    "test": "vitest run --coverage=false",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "evidence:ui": "playwright test tests/e2e/manual-ui-evidence.spec.ts --project=chromium --project=mobile-chrome",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "5.2.2",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@tanstack/react-query": "5.100.10",
+    "lucide-react": "1.14.0",
+    "next": "16.2.6",
+    "postcss": "8.5.14",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-hook-form": "7.75.0",
+    "tailwindcss": "^4.3.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/node": "25.7.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "jsdom": "29.1.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.6"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.5.14"
+    }
+  }
+}
