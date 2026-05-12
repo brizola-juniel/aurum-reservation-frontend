@@ -38,9 +38,36 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   await page.screenshot({ path: filePath, fullPage: true });
 }
 
+async function expectNoHorizontalOverflow(page: Page) {
+  const overflow = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const scrollWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+    const offenders = Array.from(document.body.querySelectorAll<HTMLElement>('*'))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          tag: element.tagName.toLowerCase(),
+          id: element.id,
+          className: element.className.toString(),
+          text: (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80),
+          left: Math.round(rect.left),
+          right: Math.round(rect.right),
+          width: Math.round(rect.width)
+        };
+      })
+      .filter((item) => item.right > viewportWidth + 1 || item.left < -1)
+      .slice(0, 8);
+
+    return { viewportWidth, scrollWidth, offenders };
+  });
+
+  expect(overflow.scrollWidth, JSON.stringify(overflow, null, 2)).toBeLessThanOrEqual(overflow.viewportWidth + 1);
+}
+
 async function captureViewport(page: Page, testInfo: TestInfo, name: string, width: number, height: number) {
   await page.setViewportSize({ width, height });
   await page.evaluate(() => window.scrollTo(0, 0));
+  await expectNoHorizontalOverflow(page);
   await capture(page, testInfo, `breakpoints/${name}.png`);
 }
 

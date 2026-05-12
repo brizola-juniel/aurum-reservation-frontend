@@ -46,7 +46,7 @@ type ResourceDeletionTarget =
 const shellClass =
   'grid min-h-screen gap-4 bg-[linear-gradient(135deg,var(--color-aurum-page)_0%,var(--color-aurum-soft)_44%,var(--color-aurum-page-strong)_100%)] p-4 text-aurum-text lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-5 lg:p-6';
 const sidebarClass =
-  'flex flex-col gap-6 rounded-[8px] border border-white/10 bg-aurum-text p-5 text-white shadow-aurum-panel lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:min-h-[620px] lg:self-start';
+  'flex min-w-0 flex-col gap-6 rounded-[8px] border border-white/10 bg-aurum-text p-5 text-white shadow-aurum-panel lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:min-h-[620px] lg:self-start';
 const sidebarBrandClass = 'flex items-center gap-3';
 const brandMarkClass =
   'flex size-12 shrink-0 items-center justify-center rounded-[8px] bg-aurum-primary text-white shadow-[inset_0_0_0_1px_rgb(255_255_255_/_18%)]';
@@ -59,9 +59,9 @@ const sidebarNavButtonActiveClass =
   'border-aurum-accent bg-white/10 text-white shadow-[inset_4px_0_0_var(--color-aurum-accent)]';
 const sidebarMetricsClass = 'grid grid-cols-2 gap-2';
 const sidebarMetricClass = 'rounded-[8px] border border-white/10 bg-white/[0.08] p-3 text-sm text-white/70';
-const sidebarAccountClass = 'mt-auto flex flex-col gap-3';
+const sidebarAccountClass = 'mt-auto flex min-w-0 flex-col gap-3';
 const userChipClass =
-  'overflow-hidden text-ellipsis whitespace-nowrap rounded-[8px] border border-white/10 bg-white/[0.08] px-3 py-2 text-sm text-white/85';
+  'block w-full min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-[8px] border border-white/10 bg-white/[0.08] px-3 py-2 text-sm text-white/85';
 const contentShellClass = 'min-w-0 space-y-5';
 const contentHeaderClass =
   'flex flex-col gap-4 rounded-[8px] border border-aurum-border bg-aurum-surface p-5 shadow-aurum-panel md:flex-row md:items-center md:justify-between';
