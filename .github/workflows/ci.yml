@@ -1,0 +1,93 @@
+name: reservation-frontend-ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: "10.19.0"
+  NODE_QUALITY_IMAGE: node:24-alpine
+  NODE_PLAYWRIGHT_IMAGE: node:24-bookworm
+
+jobs:
+  frontend-quality:
+    name: frontend-quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Run lint, Vitest and build inside Docker
+        run: |
+          docker run --rm \
+            -e CI=true \
+            -e PNPM_VERSION \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$NODE_QUALITY_IMAGE" \
+            sh -lc '
+              trap '\''chown -R "${HOST_UID}:${HOST_GID}" node_modules .next 2>/dev/null || true'\'' EXIT
+              node --version | grep "^v24\\."
+              corepack enable
+              corepack prepare "pnpm@${PNPM_VERSION}" --activate
+              pnpm --version
+              pnpm install --frozen-lockfile
+              pnpm lint
+              pnpm test
+              pnpm build
+            '
+
+      - name: Run mocked E2E and PDF contract inside Docker
+        run: |
+          docker run --rm --ipc=host \
+            -e CI=true \
+            -e PNPM_VERSION \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            "$NODE_PLAYWRIGHT_IMAGE" \
+            bash -lc '
+              trap '\''chown -R "${HOST_UID}:${HOST_GID}" node_modules .next playwright-report test-results 2>/dev/null || true'\'' EXIT
+              node --version | grep "^v24\\."
+              corepack enable
+              corepack prepare "pnpm@${PNPM_VERSION}" --activate
+              pnpm install --frozen-lockfile
+              pnpm exec playwright --version | grep "Version 1.60.0"
+              pnpm exec playwright install --with-deps chromium
+              unset LIVE_E2E FRONTEND_BASE_URL MANUAL_UI_EVIDENCE
+              pnpm exec playwright test \
+                tests/e2e/reservations.spec.ts \
+                tests/e2e/pdf-ui-contract.spec.ts \
+                --project=chromium \
+                --project=mobile-chrome
+            '
+
+      - name: Build production runtime image
+        run: docker build --pull --tag aurum-reservation-frontend:ci .
+
+      - name: Upload Playwright evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: frontend-playwright-evidence
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            playwright-report
+            test-results

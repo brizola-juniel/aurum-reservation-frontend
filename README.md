@@ -1,6 +1,18 @@
-# Frontend
+# Aurum Reservation Frontend
 
-Aplicação web Next.js + React + TypeScript para login/cadastro e gestão de reservas.
+Aplicação web Next.js + React + TypeScript para login/cadastro e gestão de reservas da
+Aurum Reservas Brasil.
+
+Este README funciona nos dois formatos de entrega:
+
+- Monorepo: `/home/juniel/Documentos/reservation-system/frontend`.
+- Standalone: `aurum-reservation-frontend`.
+
+Execute os comandos abaixo a partir da raiz do frontend. No monorepo, entre em `frontend` antes:
+
+```bash
+cd frontend
+```
 
 ## Responsabilidade
 
@@ -25,6 +37,20 @@ Aplicação web Next.js + React + TypeScript para login/cadastro e gestão de re
 - Lucide React.
 - Vitest + Testing Library.
 - Playwright.
+
+## Automação GitHub
+
+Quando este diretório é exportado como o repositório standalone `aurum-reservation-frontend`,
+os arquivos em `.github/` ativam:
+
+- GitHub Actions CI Docker-only.
+- Gate Node 24 com lint, Vitest e build.
+- Gate Playwright `1.60.0` com E2E mockado e contrato visual/funcional do PDF, sem `LIVE_E2E`.
+- Upload de evidências Playwright.
+- Dependabot semanal para npm, GitHub Actions e Docker.
+
+No monorepo, esses arquivos são a fonte exportável do frontend; a orquestração completa continua
+nos scripts Docker da raiz do produto.
 
 ## Sessão e BFF
 
@@ -65,25 +91,60 @@ RESERVATION_API_INTERNAL_URL=http://reservation-service:8000
 BFF_COOKIE_SECURE=false
 ```
 
-## Rodar via Docker
+No standalone, ajuste `AUTH_API_INTERNAL_URL` e `RESERVATION_API_INTERNAL_URL` para os endpoints
+internos disponíveis no seu ambiente Docker ou orquestrador.
+
+## Rodar via Docker no standalone
+
+```bash
+docker build -t aurum-reservation-frontend .
+docker run --rm -p 3000:3000 \
+  -e AUTH_API_INTERNAL_URL=http://auth-service:8080 \
+  -e RESERVATION_API_INTERNAL_URL=http://reservation-service:8000 \
+  -e BFF_COOKIE_SECURE=false \
+  aurum-reservation-frontend
+```
+
+Este projeto é Docker-first. Não é necessário instalar Node, pnpm ou Playwright no host.
+
+No monorepo, a stack completa continua sendo iniciada a partir da raiz:
 
 ```bash
 ./scripts/dev-up.sh
 ```
 
-Este projeto é Docker-first. Não é necessário instalar Node, pnpm ou Playwright no host.
-
 ## Testes
 
-Na raiz:
+Gate de qualidade do frontend:
+
+```bash
+docker run --rm \
+  -v "$PWD:/app" \
+  -v aurum-frontend-node-modules-quality:/app/node_modules \
+  -v aurum-frontend-next-quality:/app/.next \
+  -w /app \
+  node:24-alpine \
+  sh -lc "corepack enable && corepack prepare pnpm@10.19.0 --activate && pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm build"
+```
+
+Gate Playwright mockado e contrato PDF:
+
+```bash
+docker run --rm --ipc=host \
+  -v "$PWD:/app" \
+  -v aurum-frontend-node-modules-playwright:/app/node_modules \
+  -v aurum-frontend-next-playwright:/app/.next \
+  -v aurum-frontend-playwright-report:/app/playwright-report \
+  -v aurum-frontend-test-results:/app/test-results \
+  -w /app \
+  node:24-bookworm \
+  bash -lc "corepack enable && corepack prepare pnpm@10.19.0 --activate && pnpm install --frozen-lockfile && pnpm exec playwright --version | grep 'Version 1.60.0' && pnpm exec playwright install --with-deps chromium && unset LIVE_E2E FRONTEND_BASE_URL MANUAL_UI_EVIDENCE && pnpm exec playwright test tests/e2e/reservations.spec.ts tests/e2e/pdf-ui-contract.spec.ts --project=chromium --project=mobile-chrome"
+```
+
+Gate completo do monorepo, executado a partir da raiz do produto:
 
 ```bash
 ./scripts/test-all.sh
 ```
 
-Somente o frontend, em container:
-
-```bash
-docker run --rm -v "$PWD/frontend:/app" -v aurum-frontend-node-modules:/app/node_modules -w /app node:24-alpine \
-  sh -lc "corepack enable && corepack prepare pnpm@10.19.0 --activate && pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm build"
-```
+Detalhes de validação ficam em `TESTING.md`; política de segurança fica em `SECURITY.md`.

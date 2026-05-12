@@ -1,0 +1,73 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 6
+    commit-message:
+      prefix: deps(frontend)
+      include: scope
+    labels:
+      - dependencies
+      - frontend
+    groups:
+      next-react-platform:
+        patterns:
+          - next
+          - react
+          - react-dom
+          - eslint-config-next
+      test-and-quality-tooling:
+        dependency-type: development
+        patterns:
+          - "@playwright/*"
+          - "@testing-library/*"
+          - eslint
+          - jsdom
+          - typescript
+          - vitest
+      styling-and-ui-runtime:
+        patterns:
+          - "@hookform/*"
+          - "@tailwindcss/*"
+          - "@tanstack/*"
+          - lucide-react
+          - postcss
+          - react-hook-form
+          - tailwindcss
+          - zod
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:15"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: deps(actions)
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:30"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: deps(docker)
+      include: scope
+    labels:
+      - dependencies
+      - docker
