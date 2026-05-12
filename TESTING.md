@@ -34,9 +34,9 @@ docker run --rm \
 
 ## Mocked E2E and PDF Contract Gate
 
-Runs Playwright `1.60.0` with Node 24 against mocked API routes only. This intentionally excludes
-`LIVE_E2E` so the standalone frontend repository can validate without the auth and reservation
-services running.
+Runs Playwright `1.60.0` with Node 24 against mocked API routes and axe-core accessibility scans.
+This intentionally excludes `LIVE_E2E` so the standalone frontend repository can validate without
+the auth and reservation services running.
 
 ```bash
 docker run --rm --ipc=host \
@@ -47,7 +47,7 @@ docker run --rm --ipc=host \
   -v aurum-frontend-test-results:/app/test-results \
   -w /app \
   node:24-bookworm \
-  bash -lc "corepack enable && corepack prepare pnpm@10.19.0 --activate && pnpm install --frozen-lockfile && pnpm exec playwright --version | grep 'Version 1.60.0' && pnpm exec playwright install --with-deps chromium && unset LIVE_E2E FRONTEND_BASE_URL MANUAL_UI_EVIDENCE && pnpm exec playwright test tests/e2e/reservations.spec.ts tests/e2e/pdf-ui-contract.spec.ts --project=chromium --project=mobile-chrome"
+  bash -lc "corepack enable && corepack prepare pnpm@10.19.0 --activate && pnpm install --frozen-lockfile && pnpm exec playwright --version | grep 'Version 1.60.0' && pnpm exec playwright install --with-deps chromium && unset LIVE_E2E FRONTEND_BASE_URL MANUAL_UI_EVIDENCE && pnpm exec playwright test tests/e2e/reservations.spec.ts tests/e2e/pdf-ui-contract.spec.ts tests/e2e/accessibility.spec.ts --project=chromium --project=mobile-chrome"
 ```
 
 ## Runtime Image Gate

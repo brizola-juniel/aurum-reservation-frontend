@@ -31,6 +31,8 @@ Do not include real secrets, production tokens, customer data, or personal data 
 - No `NEXT_PUBLIC_*` backend URLs are part of the delivery contract.
 - The default Content Security Policy restricts `connect-src` to `'self'`.
 - Production deployments must set `BFF_COOKIE_SECURE=true` behind HTTPS.
+- `BFF_ALLOW_INSECURE_COOKIES=true` is only acceptable for local Docker over HTTP.
+- Logout must revoke the upstream refresh token before clearing local session cookies.
 - Runtime endpoints are configured by environment variables, not by committed secrets.
 
 ## Dependency and Supply Chain Controls

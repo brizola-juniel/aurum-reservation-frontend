@@ -19,12 +19,13 @@ const authSchema = z.object({
 type AuthForm = z.infer<typeof authSchema>;
 
 type AuthPageProps = {
+  initialMessage?: string | null;
   onAuthenticated: (response: AuthSession) => void;
 };
 
-export function AuthPage({ onAuthenticated }: AuthPageProps) {
+export function AuthPage({ initialMessage = null, onAuthenticated }: AuthPageProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [apiMessage, setApiMessage] = useState<string | null>(null);
+  const [apiMessage, setApiMessage] = useState<string | null>(initialMessage);
   const {
     register,
     handleSubmit,
@@ -80,12 +81,23 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
         </div>
 
         <form className="grid gap-4" onSubmit={(event) => void handleSubmit(onSubmit)(event)}>
-          <Field label="E-mail" error={errors.email?.message}>
-            <input className={fieldControlClass} autoComplete="email" type="email" {...register('email')} />
+          <Field label="E-mail" controlId="auth-email" error={errors.email?.message} errorId="auth-email-error">
+            <input
+              id="auth-email"
+              aria-describedby={errors.email ? 'auth-email-error' : undefined}
+              aria-invalid={errors.email ? 'true' : undefined}
+              className={fieldControlClass}
+              autoComplete="email"
+              type="email"
+              {...register('email')}
+            />
           </Field>
 
-          <Field label="Senha" error={errors.password?.message}>
+          <Field label="Senha" controlId="auth-password" error={errors.password?.message} errorId="auth-password-error">
             <input
+              id="auth-password"
+              aria-describedby={errors.password ? 'auth-password-error' : undefined}
+              aria-invalid={errors.password ? 'true' : undefined}
               className={fieldControlClass}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               type="password"

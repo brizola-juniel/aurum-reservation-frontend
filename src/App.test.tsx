@@ -61,4 +61,15 @@ describe('App authentication flow', () => {
     expect(await screen.findByRole('heading', { name: 'Reservas de salas' })).toBeInTheDocument();
     expect(window.localStorage.getItem('aurum-reservation-session')).toBeNull();
   });
+
+  it('shows a user-facing message when session verification fails unexpectedly', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.mocked(fetch).mockImplementationOnce(async () => Response.json({ message: 'upstream down' }, { status: 503 }));
+
+    renderApp();
+
+    expect(await screen.findByText('Não foi possível verificar sua sessão. Tente entrar novamente.')).toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
 });

@@ -23,6 +23,55 @@ export class ApiError extends Error {
   }
 }
 
+const commonErrorMessages: Record<number, string> = {
+  400: 'Revise os dados informados e tente novamente.',
+  401: 'Sessão expirada. Entre novamente para continuar.',
+  403: 'Ação não autorizada ou token CSRF inválido.',
+  404: 'Registro não encontrado ou já removido.',
+  409: 'Já existe uma reserva ou cadastro conflitante para estes dados.',
+  422: 'Revise os campos obrigatórios e os formatos informados.',
+  500: 'Serviço indisponível no momento. Tente novamente em instantes.',
+  502: 'Serviço indisponível no momento. Tente novamente em instantes.',
+  503: 'Serviço indisponível no momento. Tente novamente em instantes.',
+  504: 'Serviço indisponível no momento. Tente novamente em instantes.'
+};
+
+function translateApiMessage(status: number, message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('csrf')) {
+    return 'Sua sessão precisa ser atualizada. Recarregue a página e tente novamente.';
+  }
+  if (normalized.includes('expired') || normalized.includes('expirada')) {
+    return 'Sessão expirada. Entre novamente para continuar.';
+  }
+  if (
+    status === 409 ||
+    normalized.includes('conflict') ||
+    normalized.includes('overlap') ||
+    normalized.includes('conflito') ||
+    normalized.includes('já existe')
+  ) {
+    return 'Já existe uma reserva ou cadastro conflitante para estes dados.';
+  }
+  if (normalized.includes('not found') || normalized.includes('não encontrado')) {
+    return 'Registro não encontrado ou já removido.';
+  }
+  if (normalized.includes('validation') || normalized.includes('invalid') || normalized.includes('inválid')) {
+    return 'Revise os campos obrigatórios e os formatos informados.';
+  }
+  return commonErrorMessages[status] ?? message;
+}
+
+export function userFacingErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof ApiError) {
+    return translateApiMessage(error.status, error.message);
+  }
+  if (error instanceof TypeError && error.message.toLowerCase().includes('fetch')) {
+    return 'Não foi possível conectar aos serviços. Verifique a conexão e tente novamente.';
+  }
+  return fallback;
+}
+
 async function request<T>(
   baseUrl: string,
   path: string,
