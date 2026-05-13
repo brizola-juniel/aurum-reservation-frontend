@@ -1,13 +1,14 @@
 'use client';
 
 import { Save, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { z } from 'zod';
 
 import type { Location, Reservation, ReservationPayload, Room } from '../api/types';
 import { dateTimeLocalToIso, toDateTimeLocal } from '../utils/date';
 import { Button, FeedbackMessage, Field, fieldControlClass, IconButton, cx } from './ui';
+import { useDialogFocusTrap } from './useDialogFocusTrap';
 
 const reservationSchema = z
   .object({
@@ -114,11 +115,26 @@ export function ReservationForm({
 }: ReservationFormProps) {
   const [values, setValues] = useState<ReservationFormInput>(() => buildDefaults(reservation));
   const [errors, setErrors] = useState<ReservationFieldErrors>({});
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const locationSelectRef = useRef<HTMLSelectElement>(null);
 
   const filteredRooms = useMemo(
     () => rooms.filter((room) => !values.location_id || room.location_id === values.location_id),
     [values.location_id, rooms]
   );
+  const selectedRoom = useMemo(() => rooms.find((room) => room.id === values.room_id) ?? null, [rooms, values.room_id]);
+  const attendeesMax = selectedRoom?.capacity ?? 500;
+
+  useDialogFocusTrap(dialogRef, onCancel);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    locationSelectRef.current?.focus();
+
+    return () => {
+      previousFocus?.focus();
+    };
+  }, []);
 
   const updateField = <K extends keyof ReservationFormInput>(field: K, value: ReservationFormInput[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -153,6 +169,53 @@ export function ReservationForm({
     });
   };
 
+  const handleRoomChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const roomId = event.target.value;
+    const roomCapacity = rooms.find((room) => room.id === roomId)?.capacity ?? 500;
+    setValues((current) => {
+      const attendees = Number(current.attendees);
+      return {
+        ...current,
+        room_id: roomId,
+        attendees:
+          current.coffee && current.attendees !== '' && Number.isFinite(attendees) && attendees > roomCapacity
+            ? roomCapacity
+            : current.attendees
+      };
+    });
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.room_id;
+      delete next.attendees;
+      return next;
+    });
+  };
+
+  const handleCoffeeChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const checked = event.target.checked;
+    setValues((current) => ({ ...current, coffee: checked, attendees: checked ? current.attendees : '' }));
+    setErrors((current) => {
+      const next = { ...current };
+      delete next.coffee;
+      delete next.attendees;
+      return next;
+    });
+  };
+
+  const handleAttendeesChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value;
+    if (nextValue === '') {
+      updateField('attendees', '');
+      return;
+    }
+    const numericValue = Number(nextValue);
+    if (!Number.isFinite(numericValue)) {
+      updateField('attendees', '');
+      return;
+    }
+    updateField('attendees', Math.min(Math.max(Math.trunc(numericValue), 1), attendeesMax));
+  };
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const parsed = reservationSchema.safeParse(values);
@@ -162,6 +225,16 @@ export function ReservationForm({
     }
 
     const parsedValues = parsed.data;
+    if (
+      parsedValues.coffee &&
+      selectedRoom &&
+      typeof parsedValues.attendees === 'number' &&
+      parsedValues.attendees > selectedRoom.capacity
+    ) {
+      setErrors({ attendees: `Quantidade máxima para esta sala: ${selectedRoom.capacity}` });
+      return;
+    }
+
     setErrors({});
     onSubmit({
       location_id: parsedValues.location_id,
@@ -177,7 +250,8 @@ export function ReservationForm({
 
   return (
     <div className="fixed inset-0 z-20 bg-aurum-text/40" role="presentation">
-      <aside
+      <div
+        ref={dialogRef}
         className="absolute inset-y-0 right-0 w-full max-w-[560px] overflow-y-auto bg-white p-[22px] shadow-aurum-panel"
         role="dialog"
         aria-modal="true"
@@ -193,8 +267,21 @@ export function ReservationForm({
         </header>
 
         <form className="grid gap-4" onSubmit={submit}>
-          <Field label="Local / filial" error={errors.location_id}>
-            <select className={fieldControlClass} value={values.location_id} onChange={handleLocationChange}>
+          <Field
+            label="Local / filial"
+            controlId="reservation-location"
+            error={errors.location_id}
+            errorId="reservation-location-error"
+          >
+            <select
+              id="reservation-location"
+              aria-describedby={errors.location_id ? 'reservation-location-error' : undefined}
+              aria-invalid={errors.location_id ? 'true' : undefined}
+              className={fieldControlClass}
+              ref={locationSelectRef}
+              value={values.location_id}
+              onChange={handleLocationChange}
+            >
               <option value="">Selecione</option>
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>
@@ -204,8 +291,15 @@ export function ReservationForm({
             </select>
           </Field>
 
-          <Field label="Sala" error={errors.room_id}>
-            <select className={fieldControlClass} value={values.room_id} onChange={handleTextChange('room_id')}>
+          <Field label="Sala" controlId="reservation-room" error={errors.room_id} errorId="reservation-room-error">
+            <select
+              id="reservation-room"
+              aria-describedby={errors.room_id ? 'reservation-room-error' : undefined}
+              aria-invalid={errors.room_id ? 'true' : undefined}
+              className={fieldControlClass}
+              value={values.room_id}
+              onChange={handleRoomChange}
+            >
               <option value="">Selecione</option>
               {filteredRooms.map((room) => (
                 <option key={room.id} value={room.id}>
@@ -216,16 +310,22 @@ export function ReservationForm({
           </Field>
 
           <div className="grid grid-cols-2 gap-3 max-[820px]:grid-cols-1">
-            <Field label="Início" error={errors.start_at}>
+            <Field label="Início" controlId="reservation-start" error={errors.start_at} errorId="reservation-start-error">
               <input
+                id="reservation-start"
+                aria-describedby={errors.start_at ? 'reservation-start-error' : undefined}
+                aria-invalid={errors.start_at ? 'true' : undefined}
                 className={fieldControlClass}
                 type="datetime-local"
                 value={values.start_at}
                 onChange={handleTextChange('start_at')}
               />
             </Field>
-            <Field label="Fim" error={errors.end_at}>
+            <Field label="Fim" controlId="reservation-end" error={errors.end_at} errorId="reservation-end-error">
               <input
+                id="reservation-end"
+                aria-describedby={errors.end_at ? 'reservation-end-error' : undefined}
+                aria-invalid={errors.end_at ? 'true' : undefined}
                 className={fieldControlClass}
                 type="datetime-local"
                 value={values.end_at}
@@ -234,8 +334,20 @@ export function ReservationForm({
             </Field>
           </div>
 
-          <Field label="Responsável" error={errors.responsible}>
-            <input className={fieldControlClass} value={values.responsible} onChange={handleTextChange('responsible')} />
+          <Field
+            label="Responsável"
+            controlId="reservation-responsible"
+            error={errors.responsible}
+            errorId="reservation-responsible-error"
+          >
+            <input
+              id="reservation-responsible"
+              aria-describedby={errors.responsible ? 'reservation-responsible-error' : undefined}
+              aria-invalid={errors.responsible ? 'true' : undefined}
+              className={fieldControlClass}
+              value={values.responsible}
+              onChange={handleTextChange('responsible')}
+            />
           </Field>
 
           <label className="flex items-center gap-2.5 text-[0.88rem] font-bold text-aurum-text">
@@ -243,31 +355,36 @@ export function ReservationForm({
               className="h-[18px] min-h-[18px] w-[18px] accent-aurum-primary"
               type="checkbox"
               checked={values.coffee}
-              onChange={(event) => updateField('coffee', event.target.checked)}
+              onChange={handleCoffeeChange}
             />
             <span>Café</span>
           </label>
 
           <Field
             label="Quantidade de pessoas"
-            help="Obrigatório quando café estiver marcado."
+            controlId="reservation-attendees"
+            help={`Obrigatório quando café estiver marcado. Máximo da sala: ${attendeesMax}.`}
             helpId="attendees-help"
             error={errors.attendees}
+            errorId="attendees-error"
           >
             <input
+              id="reservation-attendees"
               className={fieldControlClass}
-              aria-describedby="attendees-help"
+              aria-describedby={errors.attendees ? 'attendees-help attendees-error' : 'attendees-help'}
+              aria-invalid={errors.attendees ? 'true' : undefined}
               inputMode="numeric"
               type="number"
               min={1}
-              max={500}
+              max={attendeesMax}
               value={values.attendees}
-              onChange={handleTextChange('attendees')}
+              onChange={handleAttendeesChange}
             />
           </Field>
 
-          <Field label="Descrição">
+          <Field label="Descrição" controlId="reservation-description">
             <textarea
+              id="reservation-description"
               className={cx(fieldControlClass, 'resize-y')}
               rows={4}
               value={values.description}
@@ -287,7 +404,7 @@ export function ReservationForm({
             </Button>
           </div>
         </form>
-      </aside>
+      </div>
     </div>
   );
 }

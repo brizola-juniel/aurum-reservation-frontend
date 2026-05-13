@@ -19,12 +19,12 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { ApiError, reservationsApi } from '../api/client';
-import type { Reservation, ReservationPayload } from '../api/types';
+import { reservationsApi, userFacingErrorMessage } from '../api/client';
+import type { Location, Reservation, ReservationPayload, Room } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ReservationForm } from '../components/ReservationForm';
 import { ResourceManager } from '../components/ResourceManager';
-import { Button, IconButton, cx } from '../components/ui';
+import { Button, FeedbackMessage, IconButton, cx } from '../components/ui';
 import type { Session } from '../state/session';
 import { formatDateTime } from '../utils/date';
 
@@ -35,13 +35,18 @@ type DashboardProps = {
 
 type DeletionTarget =
   | { type: 'single'; reservation: Reservation }
-  | { type: 'bulk'; ids: string[] }
+  | { type: 'bulk'; ids: string[]; hiddenIds: string[] }
+  | null;
+
+type ResourceDeletionTarget =
+  | { type: 'location'; location: Location }
+  | { type: 'room'; room: Room }
   | null;
 
 const shellClass =
   'grid min-h-screen gap-4 bg-[linear-gradient(135deg,var(--color-aurum-page)_0%,var(--color-aurum-soft)_44%,var(--color-aurum-page-strong)_100%)] p-4 text-aurum-text lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-5 lg:p-6';
 const sidebarClass =
-  'flex flex-col gap-6 rounded-[8px] border border-white/10 bg-aurum-text p-5 text-white shadow-aurum-panel lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:min-h-[620px] lg:self-start';
+  'flex min-w-0 flex-col gap-6 rounded-[8px] border border-white/10 bg-aurum-text p-5 text-white shadow-aurum-panel lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:min-h-[620px] lg:self-start';
 const sidebarBrandClass = 'flex items-center gap-3';
 const brandMarkClass =
   'flex size-12 shrink-0 items-center justify-center rounded-[8px] bg-aurum-primary text-white shadow-[inset_0_0_0_1px_rgb(255_255_255_/_18%)]';
@@ -54,9 +59,9 @@ const sidebarNavButtonActiveClass =
   'border-aurum-accent bg-white/10 text-white shadow-[inset_4px_0_0_var(--color-aurum-accent)]';
 const sidebarMetricsClass = 'grid grid-cols-2 gap-2';
 const sidebarMetricClass = 'rounded-[8px] border border-white/10 bg-white/[0.08] p-3 text-sm text-white/70';
-const sidebarAccountClass = 'mt-auto flex flex-col gap-3';
+const sidebarAccountClass = 'mt-auto flex min-w-0 flex-col gap-3';
 const userChipClass =
-  'overflow-hidden text-ellipsis whitespace-nowrap rounded-[8px] border border-white/10 bg-white/[0.08] px-3 py-2 text-sm text-white/85';
+  'block w-full min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-[8px] border border-white/10 bg-white/[0.08] px-3 py-2 text-sm text-white/85';
 const contentShellClass = 'min-w-0 space-y-5';
 const contentHeaderClass =
   'flex flex-col gap-4 rounded-[8px] border border-aurum-border bg-aurum-surface p-5 shadow-aurum-panel md:flex-row md:items-center md:justify-between';
@@ -102,7 +107,10 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
   const [editing, setEditing] = useState<Reservation | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeletionTarget>(null);
+  const [resourceDeleteTarget, setResourceDeleteTarget] = useState<ResourceDeletionTarget>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [reservationActionError, setReservationActionError] = useState<string | null>(null);
+  const [resourceActionError, setResourceActionError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const csrfToken = session.csrfToken;
 
@@ -147,11 +155,17 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
     () => filteredReservations.map((reservation) => reservation.id),
     [filteredReservations]
   );
+  const visibleReservationIdSet = useMemo(() => new Set(visibleReservationIds), [visibleReservationIds]);
+  const hiddenSelectedIds = useMemo(
+    () => selectedArray.filter((id) => !visibleReservationIdSet.has(id)),
+    [selectedArray, visibleReservationIdSet]
+  );
   const allVisibleSelected =
     visibleReservationIds.length > 0 && visibleReservationIds.every((id) => selectedIds.has(id));
   const nextReservation = useMemo(
     () =>
       reservations
+        .slice()
         .sort((left, right) => new Date(left.start_at).getTime() - new Date(right.start_at).getTime())[0] ?? null,
     [reservations]
   );
@@ -176,11 +190,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       void invalidateDomain();
     },
     onError: (error) => {
-      if (error instanceof ApiError) {
-        setFormError(error.message);
-        return;
-      }
-      setFormError('Não foi possível salvar a reserva.');
+      setFormError(userFacingErrorMessage(error, 'Não foi possível salvar a reserva.'));
     }
   });
 
@@ -194,30 +204,75 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
         await reservationsApi.bulkDeleteReservations(csrfToken, target.ids);
       }
     },
+    onMutate: () => {
+      setReservationActionError(null);
+    },
     onSuccess: () => {
       setSelectedIds(new Set());
       setDeleteTarget(null);
       void invalidateDomain();
+    },
+    onError: (error) => {
+      setDeleteTarget(null);
+      setReservationActionError(userFacingErrorMessage(error, 'Não foi possível excluir a reserva.'));
     }
   });
 
   const createLocation = useMutation({
     mutationFn: (payload: { name: string; address?: string | null }) =>
       reservationsApi.createLocation(csrfToken, payload),
-    onSuccess: () => void invalidateDomain()
+    onMutate: () => setResourceActionError(null),
+    onSuccess: () => void invalidateDomain(),
+    onError: (error) =>
+      setResourceActionError(userFacingErrorMessage(error, 'Não foi possível criar o local.'))
+  });
+  const updateLocation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: { name: string; address?: string | null } }) =>
+      reservationsApi.updateLocation(csrfToken, id, payload),
+    onMutate: () => setResourceActionError(null),
+    onSuccess: () => void invalidateDomain(),
+    onError: (error) =>
+      setResourceActionError(userFacingErrorMessage(error, 'Não foi possível atualizar o local.'))
   });
   const deleteLocation = useMutation({
     mutationFn: (id: string) => reservationsApi.deleteLocation(csrfToken, id),
-    onSuccess: () => void invalidateDomain()
+    onMutate: () => setResourceActionError(null),
+    onSuccess: () => {
+      setResourceDeleteTarget(null);
+      void invalidateDomain();
+    },
+    onError: (error) => {
+      setResourceDeleteTarget(null);
+      setResourceActionError(userFacingErrorMessage(error, 'Não foi possível excluir o local.'));
+    }
   });
   const createRoom = useMutation({
     mutationFn: (payload: { location_id: string; name: string; capacity: number }) =>
       reservationsApi.createRoom(csrfToken, payload),
-    onSuccess: () => void invalidateDomain()
+    onMutate: () => setResourceActionError(null),
+    onSuccess: () => void invalidateDomain(),
+    onError: (error) =>
+      setResourceActionError(userFacingErrorMessage(error, 'Não foi possível criar a sala.'))
+  });
+  const updateRoom = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: { location_id: string; name: string; capacity: number } }) =>
+      reservationsApi.updateRoom(csrfToken, id, payload),
+    onMutate: () => setResourceActionError(null),
+    onSuccess: () => void invalidateDomain(),
+    onError: (error) =>
+      setResourceActionError(userFacingErrorMessage(error, 'Não foi possível atualizar a sala.'))
   });
   const deleteRoom = useMutation({
     mutationFn: (id: string) => reservationsApi.deleteRoom(csrfToken, id),
-    onSuccess: () => void invalidateDomain()
+    onMutate: () => setResourceActionError(null),
+    onSuccess: () => {
+      setResourceDeleteTarget(null);
+      void invalidateDomain();
+    },
+    onError: (error) => {
+      setResourceDeleteTarget(null);
+      setResourceActionError(userFacingErrorMessage(error, 'Não foi possível excluir a sala.'));
+    }
   });
 
   const toggleSelection = (reservationId: string) => {
@@ -248,6 +303,10 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
     });
   };
 
+  const requestBulkDelete = () => {
+    setDeleteTarget({ type: 'bulk', ids: selectedArray, hiddenIds: hiddenSelectedIds });
+  };
+
   const loading = reservationsQuery.isLoading || locationsQuery.isLoading || roomsQuery.isLoading;
   const hasLoadError = reservationsQuery.isError || locationsQuery.isError || roomsQuery.isError;
 
@@ -264,10 +323,14 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
           </div>
         </div>
 
-        <nav className={sidebarNavClass} aria-label="Seções">
+        <nav className={sidebarNavClass} role="tablist" aria-label="Seções">
           <button
             className={cx(sidebarNavButtonClass, activeTab === 'reservations' && sidebarNavButtonActiveClass)}
+            id="reservations-tab"
+            role="tab"
             type="button"
+            aria-controls="reservations-panel"
+            aria-selected={activeTab === 'reservations'}
             onClick={() => setActiveTab('reservations')}
           >
             <CalendarDays size={18} aria-hidden="true" />
@@ -275,7 +338,11 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
           </button>
           <button
             className={cx(sidebarNavButtonClass, activeTab === 'resources' && sidebarNavButtonActiveClass)}
+            id="resources-tab"
+            role="tab"
             type="button"
+            aria-controls="resources-panel"
+            aria-selected={activeTab === 'resources'}
             onClick={() => setActiveTab('resources')}
           >
             <Building2 size={18} aria-hidden="true" />
@@ -368,9 +435,14 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
           </article>
         </section>
 
-        {hasLoadError ? <p className={feedbackErrorClass}>Não foi possível carregar os dados.</p> : null}
+        {hasLoadError ? <p className={feedbackErrorClass} role="alert">Não foi possível carregar os dados.</p> : null}
 
-        <section className={workspaceClass}>
+        <section
+          className={workspaceClass}
+          id={activeTab === 'reservations' ? 'reservations-panel' : 'resources-panel'}
+          role="tabpanel"
+          aria-labelledby={activeTab === 'reservations' ? 'reservations-tab' : 'resources-tab'}
+        >
           {activeTab === 'reservations' ? (
             <>
               <div className={toolbarClass}>
@@ -391,10 +463,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
                 </label>
                 <div className={toolbarActionsClass}>
                   {selectedArray.length > 0 ? (
-                    <Button
-                      variant="danger"
-                      onClick={() => setDeleteTarget({ type: 'bulk', ids: selectedArray })}
-                    >
+                    <Button variant="danger" onClick={requestBulkDelete}>
                       <Trash2 size={18} aria-hidden="true" />
                       Excluir {selectedArray.length}
                     </Button>
@@ -486,6 +555,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
                     ))}
                   </tbody>
                 </table>
+                {reservationActionError ? <FeedbackMessage>{reservationActionError}</FeedbackMessage> : null}
                 {!loading && filteredReservations.length === 0 ? (
                   <p className={emptyStateClass}>
                     {reservations.length === 0 ? 'Nenhuma reserva cadastrada.' : 'Nenhuma reserva encontrada.'}
@@ -498,14 +568,27 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
             <ResourceManager
               locations={locations}
               rooms={rooms}
-              onCreateLocation={(payload) => createLocation.mutate(payload)}
-              onDeleteLocation={(id) => deleteLocation.mutate(id)}
-              onCreateRoom={(payload) => createRoom.mutate(payload)}
-              onDeleteRoom={(id) => deleteRoom.mutate(id)}
+              feedback={resourceActionError}
+              onCreateLocation={async (payload) => {
+                await createLocation.mutateAsync(payload);
+              }}
+              onUpdateLocation={async (id, payload) => {
+                await updateLocation.mutateAsync({ id, payload });
+              }}
+              onRequestDeleteLocation={(location) => setResourceDeleteTarget({ type: 'location', location })}
+              onCreateRoom={async (payload) => {
+                await createRoom.mutateAsync(payload);
+              }}
+              onUpdateRoom={async (id, payload) => {
+                await updateRoom.mutateAsync({ id, payload });
+              }}
+              onRequestDeleteRoom={(room) => setResourceDeleteTarget({ type: 'room', room })}
               pending={
                 createLocation.isPending ||
+                updateLocation.isPending ||
                 deleteLocation.isPending ||
                 createRoom.isPending ||
+                updateRoom.isPending ||
                 deleteRoom.isPending
               }
             />
@@ -536,12 +619,41 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
           message={
             deleteTarget.type === 'single'
               ? `Confirmar exclusão da reserva de ${deleteTarget.reservation.responsible}?`
-              : `Confirmar exclusão de ${deleteTarget.ids.length} reservas selecionadas?`
+              : deleteTarget.hiddenIds.length > 0
+                ? `Confirmar exclusão de ${deleteTarget.ids.length} reservas selecionadas, incluindo ${deleteTarget.hiddenIds.length} ocultas pelo filtro atual?`
+                : `Confirmar exclusão de ${deleteTarget.ids.length} reservas selecionadas?`
           }
+          checkboxLabel={
+            deleteTarget.type === 'bulk' && deleteTarget.hiddenIds.length > 0
+              ? `Também excluir ${deleteTarget.hiddenIds.length} reservas ocultas pelo filtro atual.`
+              : undefined
+          }
+          checkboxRequired={deleteTarget.type === 'bulk' && deleteTarget.hiddenIds.length > 0}
           confirmLabel="Excluir"
           pending={deleteReservation.isPending}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => deleteReservation.mutate(deleteTarget)}
+        />
+      ) : null}
+
+      {resourceDeleteTarget ? (
+        <ConfirmDialog
+          title={resourceDeleteTarget.type === 'location' ? 'Excluir local' : 'Excluir sala'}
+          message={
+            resourceDeleteTarget.type === 'location'
+              ? `Confirmar exclusão do local ${resourceDeleteTarget.location.name}?`
+              : `Confirmar exclusão da sala ${resourceDeleteTarget.room.name}?`
+          }
+          confirmLabel="Excluir"
+          pending={deleteLocation.isPending || deleteRoom.isPending}
+          onCancel={() => setResourceDeleteTarget(null)}
+          onConfirm={() => {
+            if (resourceDeleteTarget.type === 'location') {
+              deleteLocation.mutate(resourceDeleteTarget.location.id);
+              return;
+            }
+            deleteRoom.mutate(resourceDeleteTarget.room.id);
+          }}
         />
       ) : null}
     </main>

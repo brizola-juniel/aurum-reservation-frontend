@@ -13,6 +13,7 @@ export function App() {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -26,6 +27,7 @@ export function App() {
       .catch((error) => {
         if (!(error instanceof ApiError && error.status === 401)) {
           console.error(error);
+          setSessionError('Não foi possível verificar sua sessão. Tente entrar novamente.');
         }
       })
       .finally(() => {
@@ -40,6 +42,7 @@ export function App() {
   }, []);
 
   const handleAuthenticated = (response: AuthSession) => {
+    setSessionError(null);
     setSession(response);
   };
 
@@ -64,7 +67,7 @@ export function App() {
   }
 
   if (!session) {
-    return <AuthPage onAuthenticated={handleAuthenticated} />;
+    return <AuthPage initialMessage={sessionError} onAuthenticated={handleAuthenticated} />;
   }
 
   return <Dashboard session={session} onLogout={handleLogout} />;

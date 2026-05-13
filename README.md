@@ -21,7 +21,7 @@ cd frontend
 - Enviar `Authorization: Bearer <token>` para o `reservation-service` apenas server-side, pelo BFF.
 - Exigir CSRF double-submit em mutações same-origin.
 - Permitir listagem, criação, edição, exclusão e exclusão em lote de reservas.
-- Permitir cadastro e exclusão de locais e salas.
+- Permitir cadastro, edição e exclusão confirmada de locais e salas.
 
 ## Stack
 
@@ -63,6 +63,11 @@ O BFF recebe o JWT emitido pelo C#, grava access token e refresh token em cookie
 e encaminha o JWT para o Python via `Authorization: Bearer` no servidor. O React recebe apenas
 `user`, `expiresAt` e `csrfToken`.
 
+No logout, o BFF chama o `auth-service` para revogar o refresh token antes de limpar os
+cookies locais. Em produção, cookies inseguros só são permitidos se
+`BFF_ALLOW_INSECURE_COOKIES=true` e `BFF_INSECURE_COOKIE_CONTEXT=local-docker` estiverem
+definidos explicitamente para Docker local.
+
 ## UI system
 
 A identidade visual da Aurum Reservas Brasil usa Tailwind CSS v4 com tokens `aurum-*`
@@ -89,6 +94,8 @@ moderada reportada para `postcss <8.5.10` em auditoria `pnpm audit --prod`.
 AUTH_API_INTERNAL_URL=http://auth-service:8080
 RESERVATION_API_INTERNAL_URL=http://reservation-service:8000
 BFF_COOKIE_SECURE=false
+BFF_ALLOW_INSECURE_COOKIES=true
+BFF_INSECURE_COOKIE_CONTEXT=local-docker
 ```
 
 No standalone, ajuste `AUTH_API_INTERNAL_URL` e `RESERVATION_API_INTERNAL_URL` para os endpoints
@@ -102,6 +109,8 @@ docker run --rm -p 3000:3000 \
   -e AUTH_API_INTERNAL_URL=http://auth-service:8080 \
   -e RESERVATION_API_INTERNAL_URL=http://reservation-service:8000 \
   -e BFF_COOKIE_SECURE=false \
+  -e BFF_ALLOW_INSECURE_COOKIES=true \
+  -e BFF_INSECURE_COOKIE_CONTEXT=local-docker \
   aurum-reservation-frontend
 ```
 
@@ -138,7 +147,7 @@ docker run --rm --ipc=host \
   -v aurum-frontend-test-results:/app/test-results \
   -w /app \
   node:24-bookworm \
-  bash -lc "corepack enable && corepack prepare pnpm@10.19.0 --activate && pnpm install --frozen-lockfile && pnpm exec playwright --version | grep 'Version 1.60.0' && pnpm exec playwright install --with-deps chromium && unset LIVE_E2E FRONTEND_BASE_URL MANUAL_UI_EVIDENCE && pnpm exec playwright test tests/e2e/reservations.spec.ts tests/e2e/pdf-ui-contract.spec.ts --project=chromium --project=mobile-chrome"
+  bash -lc "corepack enable && corepack prepare pnpm@10.19.0 --activate && pnpm install --frozen-lockfile && pnpm exec playwright --version | grep 'Version 1.60.0' && pnpm exec playwright install --with-deps chromium && unset LIVE_E2E FRONTEND_BASE_URL MANUAL_UI_EVIDENCE && pnpm exec playwright test tests/e2e/reservations.spec.ts tests/e2e/pdf-ui-contract.spec.ts tests/e2e/accessibility.spec.ts --project=chromium --project=mobile-chrome"
 ```
 
 Gate completo do monorepo, executado a partir da raiz do produto:

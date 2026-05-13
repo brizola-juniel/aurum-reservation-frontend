@@ -1,11 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const externalBaseUrl = process.env.FRONTEND_BASE_URL;
+const recordVideo = process.env.E2E_RECORD_VIDEO === '1' || process.env.MANUAL_UI_EVIDENCE === '1';
+const recordScreenshot = process.env.E2E_RECORD_SCREENSHOT === '1';
+const artifactDir = process.env.PLAYWRIGHT_ARTIFACT_DIR;
 
 export default defineConfig({
   testDir: './tests/e2e',
   testIgnore: process.env.MANUAL_UI_EVIDENCE ? [] : ['**/manual-ui-evidence.spec.ts'],
-  outputDir: './test-results',
+  outputDir: artifactDir ?? './test-results',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -19,8 +22,8 @@ export default defineConfig({
   use: {
     baseURL: externalBaseUrl ?? 'http://127.0.0.1:3000',
     trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure'
+    screenshot: recordScreenshot ? 'on' : 'only-on-failure',
+    video: recordVideo ? 'on' : 'retain-on-failure'
   },
   ...(externalBaseUrl
     ? {}

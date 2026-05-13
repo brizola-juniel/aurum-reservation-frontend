@@ -90,7 +90,7 @@ test('honors PDF UI contract for conflict, hidden coffee fields and bulk delete'
   await page.getByLabel('Fim').fill('2032-05-12T13:30');
   await page.getByLabel('Responsável').fill('Conflito Contrato');
   await page.getByRole('button', { name: 'Salvar' }).click();
-  await expect(page.getByText('Já existe uma reserva para esta sala neste horário.')).toBeVisible();
+  await expect(page.getByText('Já existe uma reserva ou cadastro conflitante para estes dados.')).toBeVisible();
   await page.getByRole('button', { name: 'Fechar' }).click();
 
   await page.getByRole('checkbox', { name: 'Selecionar reserva de Ana Contrato' }).check();

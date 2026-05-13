@@ -9,6 +9,8 @@ const REFRESH_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const authApiUrl = process.env.AUTH_API_INTERNAL_URL ?? 'http://localhost:5000';
 const reservationApiUrl = process.env.RESERVATION_API_INTERNAL_URL ?? 'http://localhost:8000';
 const secureCookies = process.env.BFF_COOKIE_SECURE === 'true';
+const allowInsecureCookies = process.env.BFF_ALLOW_INSECURE_COOKIES === 'true';
+const insecureCookieContext = process.env.BFF_INSECURE_COOKIE_CONTEXT;
 const cookiePrefix = secureCookies ? '__Host-' : '';
 const ACCESS_COOKIE = `${cookiePrefix}aurum_access`;
 const REFRESH_COOKIE = `${cookiePrefix}aurum_refresh`;
@@ -21,7 +23,20 @@ type UpstreamRequest = {
   csrfRequired?: boolean;
 };
 
+function assertCookiePolicy() {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    !secureCookies &&
+    (!allowInsecureCookies || insecureCookieContext !== 'local-docker')
+  ) {
+    throw new Error(
+      'BFF_COOKIE_SECURE=true is required in production. The insecure cookie override requires BFF_ALLOW_INSECURE_COOKIES=true and BFF_INSECURE_COOKIE_CONTEXT=local-docker for local Docker only.'
+    );
+  }
+}
+
 function cookieOptions(httpOnly: boolean, maxAge?: number) {
+  assertCookiePolicy();
   return {
     httpOnly,
     secure: secureCookies,
@@ -106,6 +121,19 @@ async function refreshSession() {
   return (await response.json()) as AuthResponse;
 }
 
+async function revokeRefreshToken(refreshToken: string) {
+  const response = await upstreamFetch(authApiUrl, '/api/auth/logout', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ refreshToken })
+  });
+
+  return response.ok || response.status === 400 || response.status === 401 || response.status === 404;
+}
+
 async function proxyResponse(upstream: Response) {
   if (upstream.status === 204) {
     return new NextResponse(null, { status: 204 });
@@ -153,7 +181,17 @@ export async function logout(request: NextRequest) {
     return csrfError;
   }
 
-  const response = NextResponse.json({ ok: true });
+  const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
+  let revoked = true;
+  if (refreshToken) {
+    try {
+      revoked = await revokeRefreshToken(refreshToken);
+    } catch {
+      revoked = false;
+    }
+  }
+
+  const response = NextResponse.json({ ok: revoked }, { status: revoked ? 200 : 502 });
   clearSessionCookies(response);
   return response;
 }

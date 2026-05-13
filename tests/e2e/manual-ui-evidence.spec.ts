@@ -5,10 +5,14 @@ import path from 'node:path';
 type TestLocation = {
   id: string;
   name: string;
+  address?: string | null;
 };
 
 type TestRoom = {
   id: string;
+  name?: string;
+  location_id?: string;
+  capacity?: number;
 };
 
 type TestReservation = {
@@ -34,9 +38,36 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   await page.screenshot({ path: filePath, fullPage: true });
 }
 
+async function expectNoHorizontalOverflow(page: Page) {
+  const overflow = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const scrollWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+    const offenders = Array.from(document.body.querySelectorAll<HTMLElement>('*'))
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          tag: element.tagName.toLowerCase(),
+          id: element.id,
+          className: element.className.toString(),
+          text: (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80),
+          left: Math.round(rect.left),
+          right: Math.round(rect.right),
+          width: Math.round(rect.width)
+        };
+      })
+      .filter((item) => item.right > viewportWidth + 1 || item.left < -1)
+      .slice(0, 8);
+
+    return { viewportWidth, scrollWidth, offenders };
+  });
+
+  expect(overflow.scrollWidth, JSON.stringify(overflow, null, 2)).toBeLessThanOrEqual(overflow.viewportWidth + 1);
+}
+
 async function captureViewport(page: Page, testInfo: TestInfo, name: string, width: number, height: number) {
   await page.setViewportSize({ width, height });
   await page.evaluate(() => window.scrollTo(0, 0));
+  await expectNoHorizontalOverflow(page);
   await capture(page, testInfo, `breakpoints/${name}.png`);
 }
 
@@ -83,6 +114,10 @@ test.describe('manual UI evidence', () => {
     const responsible = `Evidencia UI ${suffix}`;
     const responsibleEdited = `Evidencia UI Editada ${suffix}`;
     const responsibleSecond = `Evidencia UI Lote ${suffix}`;
+    const locationName = `Local Evidencia ${suffix}`;
+    const locationNameEdited = `Local Evidencia Editado ${suffix}`;
+    const roomResourceName = `Sala Recurso ${suffix}`;
+    const roomResourceNameEdited = `Sala Recurso Editada ${suffix}`;
     const day = 10 + (Date.now() % 18);
     const datePrefix = `2035-06-${String(day).padStart(2, '0')}`;
     const startAt = `${datePrefix}T09:00`;
@@ -92,6 +127,8 @@ test.describe('manual UI evidence', () => {
     const createdReservationIds: string[] = [];
     let csrfToken: string | null = null;
     let createdRoomId: string | null = null;
+    let createdResourceLocationId: string | null = null;
+    let createdResourceRoomId: string | null = null;
 
     try {
       await page.goto('/');
@@ -160,7 +197,7 @@ test.describe('manual UI evidence', () => {
       await page.getByLabel('Responsável').fill(`Conflito ${suffix}`);
       await page.getByLabel('Descrição').fill('Tentativa de conflito de horario.');
       await page.getByRole('button', { name: 'Salvar' }).click();
-      await expect(page.getByText('Schedule conflict')).toBeVisible();
+      await expect(page.getByText('Já existe uma reserva ou cadastro conflitante para estes dados.')).toBeVisible();
       await capture(page, testInfo, '06-conflito-horario.png');
       await activateButton(page, 'Cancelar');
 
@@ -213,6 +250,65 @@ test.describe('manual UI evidence', () => {
       expect(listAfterBulkDelete.some((item) => item.responsible === responsibleSecond)).toBe(false);
       await capture(page, testInfo, '11-pos-exclusao-lote.png');
 
+      await page.getByRole('tab', { name: 'Locais e salas' }).click();
+      const locationsPanel = page.locator('section[aria-labelledby="locations-title"]');
+      const roomsPanel = page.locator('section[aria-labelledby="rooms-title"]');
+      await expect(locationsPanel.getByRole('heading', { name: 'Locais' })).toBeVisible();
+      await expect(roomsPanel.getByRole('heading', { name: 'Salas' })).toBeVisible();
+      await capture(page, testInfo, '12-recursos-inicial.png');
+
+      await page.locator('#location-name').fill(locationName);
+      await page.locator('#location-address').fill('Rua das Evidencias, 100');
+      await capture(page, testInfo, '13-local-formulario-criacao.png');
+      await locationsPanel.getByRole('button', { name: 'Adicionar' }).click();
+      await expect(locationsPanel.getByText(locationName, { exact: true })).toBeVisible();
+      const locationsAfterCreate = (await (await page.request.get('/api/locations')).json()) as TestLocation[];
+      createdResourceLocationId = locationsAfterCreate.find((location) => location.name === locationName)?.id ?? null;
+      expect(createdResourceLocationId).toBeTruthy();
+      await capture(page, testInfo, '14-local-criado.png');
+
+      await page.getByRole('button', { name: `Editar ${locationName}` }).click();
+      await page.locator(`[id="location-name-${createdResourceLocationId}"]`).fill(locationNameEdited);
+      await page.locator(`[id="location-address-${createdResourceLocationId}"]`).fill('Avenida Evidencia, 200');
+      await capture(page, testInfo, '15-local-formulario-edicao.png');
+      await page.getByRole('button', { name: `Salvar ${locationName}` }).click();
+      await expect(locationsPanel.getByText(locationNameEdited, { exact: true })).toBeVisible();
+      await capture(page, testInfo, '16-local-editado.png');
+
+      await page.locator('#room-location').selectOption(createdResourceLocationId!);
+      await page.locator('#room-name').fill(roomResourceName);
+      await page.locator('#room-capacity').fill('9');
+      await capture(page, testInfo, '17-sala-formulario-criacao.png');
+      await roomsPanel.getByRole('button', { name: 'Adicionar' }).click();
+      await expect(roomsPanel.getByText(roomResourceName, { exact: true })).toBeVisible();
+      const roomsAfterCreate = (await (await page.request.get('/api/rooms')).json()) as TestRoom[];
+      createdResourceRoomId = roomsAfterCreate.find((room) => room.name === roomResourceName)?.id ?? null;
+      expect(createdResourceRoomId).toBeTruthy();
+      await capture(page, testInfo, '18-sala-criada.png');
+
+      await page.getByRole('button', { name: `Editar ${roomResourceName}` }).click();
+      await page.locator(`[id="room-name-${createdResourceRoomId}"]`).fill(roomResourceNameEdited);
+      await page.locator(`[id="room-capacity-${createdResourceRoomId}"]`).fill('11');
+      await capture(page, testInfo, '19-sala-formulario-edicao.png');
+      await page.getByRole('button', { name: `Salvar ${roomResourceName}` }).click();
+      await expect(roomsPanel.getByText(roomResourceNameEdited, { exact: true })).toBeVisible();
+      await capture(page, testInfo, '20-sala-editada.png');
+
+      await page.getByRole('button', { name: `Excluir ${roomResourceNameEdited}` }).click();
+      await expect(page.getByRole('dialog', { name: 'Excluir sala' })).toBeVisible();
+      await capture(page, testInfo, '21-modal-exclusao-sala.png');
+      await activateButton(page, 'Excluir', { exact: true });
+      await expect(roomsPanel.getByText(roomResourceNameEdited, { exact: true })).toHaveCount(0);
+      createdResourceRoomId = null;
+
+      await page.getByRole('button', { name: `Excluir ${locationNameEdited}` }).click();
+      await expect(page.getByRole('dialog', { name: 'Excluir local' })).toBeVisible();
+      await capture(page, testInfo, '22-modal-exclusao-local.png');
+      await activateButton(page, 'Excluir', { exact: true });
+      await expect(locationsPanel.getByText(locationNameEdited, { exact: true })).toHaveCount(0);
+      createdResourceLocationId = null;
+      await capture(page, testInfo, '23-recursos-pos-exclusao.png');
+
       if (testInfo.project.name === 'chromium') {
         await captureViewport(page, testInfo, '1440-desktop-wide', 1440, 900);
         await captureViewport(page, testInfo, '1024-tablet-landscape', 1024, 768);
@@ -233,6 +329,9 @@ test.describe('manual UI evidence', () => {
           'reservation edit',
           'bulk delete confirmation',
           'bulk delete result',
+          'resource location create/edit/delete',
+          'resource room create/edit/delete',
+          'successful Playwright video retained under manual UI artifacts',
           'responsive breakpoints'
         ]
       };
@@ -249,8 +348,14 @@ test.describe('manual UI evidence', () => {
           for (const reservationId of createdReservationIds) {
             await deleteIfExists(page, csrfToken, `/api/reservations/${reservationId}`);
           }
+          if (createdResourceRoomId) {
+            await deleteIfExists(page, csrfToken, `/api/rooms/${createdResourceRoomId}`);
+          }
           if (createdRoomId) {
             await deleteIfExists(page, csrfToken, `/api/rooms/${createdRoomId}`);
+          }
+          if (createdResourceLocationId) {
+            await deleteIfExists(page, csrfToken, `/api/locations/${createdResourceLocationId}`);
           }
         } catch (error) {
           const dir = projectEvidenceDir(testInfo);
