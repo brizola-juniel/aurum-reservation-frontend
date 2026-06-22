@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
 
       - name: Run lint, Vitest and build inside Docker
         run: |
